@@ -237,5 +237,6 @@ GET  /api/content/class/{id}  → All class content (teacher/admin)
 **Frontend:** React 18, Redux Toolkit, MUI v5, React Router v6, Recharts  
 **DevOps:** Docker, Docker Compose, Kubernetes-ready, Nginx  
 **Docs:** Swagger/OpenAPI 3.0 per service
-#   s c h o o l  
+#   s c h o o l 
+ 
  
