@@ -1,0 +1,110 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - StripPrefix=1
+
+        - id: student-service
+          uri: lb://student-service
+          predicates:
+            - Path=/api/students/**
+          filters:
+            - StripPrefix=1
+            - name: JwtAuthFilter
+
+        - id: academic-service
+          uri: lb://academic-service
+          predicates:
+            - Path=/api/academic/**
+          filters:
+            - StripPrefix=1
+            - name: JwtAuthFilter
+
+        - id: teacher-service
+          uri: lb://teacher-service
+          predicates:
+            - Path=/api/teachers/**
+          filters:
+            - StripPrefix=1
+            - name: JwtAuthFilter
+
+        - id: content-service
+          uri: lb://content-service
+          predicates:
+            - Path=/api/content/**
+          filters:
+            - StripPrefix=1
+            - name: JwtAuthFilter
+
+        - id: calendar-service
+          uri: lb://calendar-service
+          predicates:
+            - Path=/api/calendar/**
+          filters:
+            - StripPrefix=1
+            - name: JwtAuthFilter
+
+        - id: online-test-service
+          uri: lb://online-test-service
+          predicates:
+            - Path=/api/tests/**
+          filters:
+            - StripPrefix=1
+            - name: JwtAuthFilter
+
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - StripPrefix=1
+            - name: JwtAuthFilter
+
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:3000"
+              - "http://frontend:80"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:schoolPortalSecretKey2026VeryLongAndSecure}
+  public-paths:
+    - /api/auth/login
+    - /api/auth/refresh
+    - /api/teachers/public/**
+    - /api/calendar/public/**
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway

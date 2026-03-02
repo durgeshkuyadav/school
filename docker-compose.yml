@@ -1,0 +1,329 @@
+version: '3.8'
+
+networks:
+  school-network:
+    driver: bridge
+
+volumes:
+  postgres-auth-data:
+  postgres-student-data:
+  postgres-academic-data:
+  postgres-teacher-data:
+  postgres-calendar-data:
+  postgres-test-data:
+  mongo-content-data:
+  mongo-media-data:
+  redis-data:
+  kafka-data:
+  zookeeper-data:
+
+services:
+
+  # ─────────────────────────────────────────────
+  # INFRASTRUCTURE
+  # ─────────────────────────────────────────────
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - school-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on: [zookeeper]
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - school-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - school-network
+
+  # ─────────────────────────────────────────────
+  # DATABASES
+  # ─────────────────────────────────────────────
+
+  postgres-auth:
+    image: postgres:16-alpine
+    container_name: postgres-auth
+    environment:
+      POSTGRES_DB: school_auth
+      POSTGRES_USER: school_user
+      POSTGRES_PASSWORD: school_pass
+    volumes:
+      - postgres-auth-data:/var/lib/postgresql/data
+    networks:
+      - school-network
+
+  postgres-student:
+    image: postgres:16-alpine
+    container_name: postgres-student
+    environment:
+      POSTGRES_DB: school_student
+      POSTGRES_USER: school_user
+      POSTGRES_PASSWORD: school_pass
+    volumes:
+      - postgres-student-data:/var/lib/postgresql/data
+    networks:
+      - school-network
+
+  postgres-academic:
+    image: postgres:16-alpine
+    container_name: postgres-academic
+    environment:
+      POSTGRES_DB: school_academic
+      POSTGRES_USER: school_user
+      POSTGRES_PASSWORD: school_pass
+    volumes:
+      - postgres-academic-data:/var/lib/postgresql/data
+    networks:
+      - school-network
+
+  postgres-teacher:
+    image: postgres:16-alpine
+    container_name: postgres-teacher
+    environment:
+      POSTGRES_DB: school_teacher
+      POSTGRES_USER: school_user
+      POSTGRES_PASSWORD: school_pass
+    volumes:
+      - postgres-teacher-data:/var/lib/postgresql/data
+    networks:
+      - school-network
+
+  postgres-calendar:
+    image: postgres:16-alpine
+    container_name: postgres-calendar
+    environment:
+      POSTGRES_DB: school_calendar
+      POSTGRES_USER: school_user
+      POSTGRES_PASSWORD: school_pass
+    volumes:
+      - postgres-calendar-data:/var/lib/postgresql/data
+    networks:
+      - school-network
+
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: postgres-test
+    environment:
+      POSTGRES_DB: school_test
+      POSTGRES_USER: school_user
+      POSTGRES_PASSWORD: school_pass
+    volumes:
+      - postgres-test-data:/var/lib/postgresql/data
+    networks:
+      - school-network
+
+  mongo-content:
+    image: mongo:7
+    container_name: mongo-content
+    environment:
+      MONGO_INITDB_DATABASE: school_content
+    volumes:
+      - mongo-content-data:/data/db
+    networks:
+      - school-network
+
+  # ─────────────────────────────────────────────
+  # MICROSERVICES
+  # ─────────────────────────────────────────────
+
+  eureka-server:
+    build: ./eureka-server
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    networks:
+      - school-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    environment:
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka
+      JWT_SECRET: ${JWT_SECRET:-schoolPortalSecretKey2026VeryLongAndSecure}
+    networks:
+      - school-network
+
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres-auth
+      - redis
+      - eureka-server
+    environment:
+      DB_URL: jdbc:postgresql://postgres-auth:5432/school_auth
+      DB_USER: school_user
+      DB_PASS: school_pass
+      REDIS_HOST: redis
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka
+      JWT_SECRET: ${JWT_SECRET:-schoolPortalSecretKey2026VeryLongAndSecure}
+      JWT_EXPIRY_MS: 3600000
+      JWT_REFRESH_EXPIRY_MS: 604800000
+    networks:
+      - school-network
+
+  student-service:
+    build: ./student-service
+    container_name: student-service
+    ports:
+      - "8083:8083"
+    depends_on:
+      - postgres-student
+      - eureka-server
+    environment:
+      DB_URL: jdbc:postgresql://postgres-student:5432/school_student
+      DB_USER: school_user
+      DB_PASS: school_pass
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka
+    networks:
+      - school-network
+
+  academic-service:
+    build: ./academic-service
+    container_name: academic-service
+    ports:
+      - "8084:8084"
+    depends_on:
+      - postgres-academic
+      - kafka
+      - eureka-server
+    environment:
+      DB_URL: jdbc:postgresql://postgres-academic:5432/school_academic
+      DB_USER: school_user
+      DB_PASS: school_pass
+      KAFKA_BOOTSTRAP: kafka:29092
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka
+    networks:
+      - school-network
+
+  teacher-service:
+    build: ./teacher-service
+    container_name: teacher-service
+    ports:
+      - "8086:8086"
+    depends_on:
+      - postgres-teacher
+      - eureka-server
+    environment:
+      DB_URL: jdbc:postgresql://postgres-teacher:5432/school_teacher
+      DB_USER: school_user
+      DB_PASS: school_pass
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka
+    networks:
+      - school-network
+
+  content-service:
+    build: ./content-service
+    container_name: content-service
+    ports:
+      - "8085:8085"
+    depends_on:
+      - mongo-content
+      - eureka-server
+    environment:
+      MONGO_URI: mongodb://mongo-content:27017/school_content
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka
+    networks:
+      - school-network
+
+  calendar-service:
+    build: ./calendar-service
+    container_name: calendar-service
+    ports:
+      - "8087:8087"
+    depends_on:
+      - postgres-calendar
+      - eureka-server
+    environment:
+      DB_URL: jdbc:postgresql://postgres-calendar:5432/school_calendar
+      DB_USER: school_user
+      DB_PASS: school_pass
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka
+    networks:
+      - school-network
+
+  online-test-service:
+    build: ./online-test-service
+    container_name: online-test-service
+    ports:
+      - "8091:8091"
+    depends_on:
+      - postgres-test
+      - redis
+      - eureka-server
+    environment:
+      DB_URL: jdbc:postgresql://postgres-test:5432/school_test
+      DB_USER: school_user
+      DB_PASS: school_pass
+      REDIS_HOST: redis
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka
+    networks:
+      - school-network
+
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    ports:
+      - "8089:8089"
+    depends_on:
+      - kafka
+      - eureka-server
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USER: ${MAIL_USER:-your@gmail.com}
+      MAIL_PASS: ${MAIL_PASS:-yourpassword}
+    networks:
+      - school-network
+
+  # ─────────────────────────────────────────────
+  # FRONTEND
+  # ─────────────────────────────────────────────
+
+  frontend:
+    build: ./frontend
+    container_name: school-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - school-network
